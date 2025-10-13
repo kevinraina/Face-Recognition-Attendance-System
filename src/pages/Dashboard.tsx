@@ -57,8 +57,15 @@ const Dashboard: React.FC = () => {
             title: 'System Analytics',
             description: 'View attendance statistics and reports',
             icon: BarChart3,
-            href: '#',
+            href: '/admin/analytics',
             color: 'text-purple-600'
+          },
+          {
+            title: 'Schedule Management',
+            description: 'Manage class schedules and timetables',
+            icon: Calendar,
+            href: '/admin/schedules',
+            color: 'text-indigo-600'
           }
         ];
       case 'teacher':
@@ -103,9 +110,9 @@ const Dashboard: React.FC = () => {
           },
           {
             title: 'Class Schedule',
-            description: 'View your class timetable',
+            description: 'View your weekly timetable',
             icon: Calendar,
-            href: '#',
+            href: '/student/schedule',
             color: 'text-purple-600'
           }
         ];

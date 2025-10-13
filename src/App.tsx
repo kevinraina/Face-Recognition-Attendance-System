@@ -11,9 +11,12 @@ import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import UserManagement from "./pages/admin/UserManagement";
 import SubjectManagement from "./pages/admin/SubjectManagement";
+import Analytics from "./pages/admin/Analytics";
+import ScheduleManagement from "./pages/admin/ScheduleManagement";
 import TakeAttendance from "./pages/teacher/TakeAttendance";
 import ViewAttendance from "./pages/teacher/ViewAttendance";
 import StudentAttendance from "./pages/student/StudentAttendance";
+import StudentSchedule from "./pages/student/Schedule";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -74,6 +77,22 @@ const AppRoutes: React.FC = () => {
             </ProtectedRoute>
           } 
         />
+        <Route 
+          path="/admin/analytics" 
+          element={
+            <ProtectedRoute allowedRoles={['admin']}>
+              <Analytics />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/admin/schedules" 
+          element={
+            <ProtectedRoute allowedRoles={['admin']}>
+              <ScheduleManagement />
+            </ProtectedRoute>
+          } 
+        />
         
         {/* Teacher Routes */}
         <Route 
@@ -99,6 +118,14 @@ const AppRoutes: React.FC = () => {
           element={
             <ProtectedRoute allowedRoles={['student']}>
               <StudentAttendance />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/student/schedule" 
+          element={
+            <ProtectedRoute allowedRoles={['student']}>
+              <StudentSchedule />
             </ProtectedRoute>
           } 
         />
