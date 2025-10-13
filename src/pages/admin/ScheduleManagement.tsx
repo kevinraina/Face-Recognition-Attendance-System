@@ -75,7 +75,7 @@ const ScheduleManagement: React.FC = () => {
   };
 
   const loadTeachers = async () => {
-    try:
+    try {
       const data = await apiService.getTeachersList();
       setTeachers(data);
     } catch (error) {
