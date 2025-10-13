@@ -306,14 +306,22 @@ class ApiService {
     }>>(response);
   }
 
-  async enrollStudent(subjectId: number, studentId: number): Promise<any> {
+  async enrollStudent(subjectId: number, data: { student_id: number; subject_id: number }): Promise<any> {
     const response = await fetch(`${API_BASE_URL}/subjects/${subjectId}/enroll`, {
       method: 'POST',
       headers: this.getHeaders(),
-      body: JSON.stringify({ student_id: studentId, subject_id: subjectId }),
+      body: JSON.stringify(data),
     });
 
     return this.handleResponse<any>(response);
+  }
+
+  async getEnrolledStudents(subjectId: number): Promise<any[]> {
+    const response = await fetch(`${API_BASE_URL}/subjects/${subjectId}/students`, {
+      headers: this.getHeaders(),
+    });
+
+    return this.handleResponse<any[]>(response);
   }
 
   // Attendance

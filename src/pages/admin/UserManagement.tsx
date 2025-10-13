@@ -111,30 +111,10 @@ const UserManagement: React.FC = () => {
     const files = e.target.files;
     if (!files || files.length === 0 || !uploadingFaceFor) return;
 
-    // Support UNLIMITED uploads - no limit!
-    const imageFiles = Array.from(files).filter(file => {
-      // Very permissive check for Fedora files without extensions
-      if (file.type.startsWith('image/')) return true;
-      
-      // Check extension
-      const extension = file.name.toLowerCase().split('.').pop();
-      const imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'tiff', 'tif'];
-      if (extension && imageExtensions.includes(extension)) return true;
-      
-      // Accept files without extensions (Fedora issue fix)
-      if (!extension || file.type === '') return true;
-      
-      return false;
-    });
-
-    if (imageFiles.length === 0) {
-      toast({
-        title: "Error",
-        description: "No valid image files selected",
-        variant: "destructive"
-      });
-      return;
-    }
+    // Accept ALL files - no validation! User knows what they're uploading.
+    const imageFiles = Array.from(files);
+    
+    console.log(`Selected ${imageFiles.length} file(s):`, imageFiles.map(f => `${f.name} (type: ${f.type || 'none'})`));
 
     // Upload all images
     let successCount = 0;
@@ -152,9 +132,10 @@ const UserManagement: React.FC = () => {
       }
     }
 
+    const photoText = successCount === 1 ? "photo" : "photos";
     toast({
       title: "Upload Complete",
-      description: `Successfully uploaded ${successCount} out of ${imageFiles.length} photos!`,
+      description: `Successfully uploaded ${successCount} ${photoText}${imageFiles.length > successCount ? ` (${imageFiles.length - successCount} failed)` : ''}`,
     });
 
     // Reset input
@@ -486,7 +467,7 @@ const UserManagement: React.FC = () => {
                             className="flex items-center gap-1"
                           >
                             <Camera className="h-3 w-3" />
-                            {uploadingFaceFor === user.id ? 'Uploading...' : 'Add Photos (Unlimited)'}
+                            {uploadingFaceFor === user.id ? 'Uploading...' : 'Add Photos'}
                           </Button>
                         )}
                         <Button

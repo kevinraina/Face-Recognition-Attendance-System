@@ -29,6 +29,8 @@ const TakeAttendance: React.FC = () => {
   const { toast } = useToast();
   const { user } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const [selectedSubject, setSelectedSubject] = useState('');
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
@@ -37,6 +39,8 @@ const TakeAttendance: React.FC = () => {
   const [showResults, setShowResults] = useState(false);
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isWebcamActive, setIsWebcamActive] = useState(false);
+  const [stream, setStream] = useState<MediaStream | null>(null);
 
   // Load real subjects from API
   useEffect(() => {
@@ -68,22 +72,87 @@ const TakeAttendance: React.FC = () => {
 
   const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (file) {
-      setSelectedImage(file);
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        setImagePreview(e.target?.result as string);
-      };
-      reader.readAsDataURL(file);
+    if (!file) return;
+
+    // Accept ANY file - user knows what they're doing
+    console.log(`Selected file: ${file.name} (type: ${file.type || 'none'}, size: ${file.size} bytes)`);
+    
+    setSelectedImage(file);
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      setImagePreview(e.target?.result as string);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const startWebcam = async () => {
+    try {
+      const mediaStream = await navigator.mediaDevices.getUserMedia({ 
+        video: { width: 1280, height: 720 } 
+      });
+      
+      if (videoRef.current) {
+        videoRef.current.srcObject = mediaStream;
+        setStream(mediaStream);
+        setIsWebcamActive(true);
+        // Clear any previous image
+        setImagePreview(null);
+        setSelectedImage(null);
+      }
+    } catch (error) {
+      console.error('Error accessing webcam:', error);
+      toast({
+        title: "Webcam Error",
+        description: "Could not access webcam. Please check permissions and try again.",
+        variant: "destructive"
+      });
     }
   };
 
-  const handleWebcamCapture = () => {
-    toast({
-      title: "Webcam Feature",
-      description: "Webcam integration would be implemented here in a real application",
-    });
+  const stopWebcam = () => {
+    if (stream) {
+      stream.getTracks().forEach(track => track.stop());
+      setStream(null);
+      setIsWebcamActive(false);
+    }
   };
+
+  const capturePhoto = () => {
+    if (videoRef.current && canvasRef.current) {
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+      
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      
+      const context = canvas.getContext('2d');
+      if (context) {
+        context.drawImage(video, 0, 0);
+        
+        // Convert canvas to blob and then to file
+        canvas.toBlob((blob) => {
+          if (blob) {
+            const file = new File([blob], `webcam-capture-${Date.now()}.jpg`, { type: 'image/jpeg' });
+            setSelectedImage(file);
+            setImagePreview(canvas.toDataURL('image/jpeg'));
+            stopWebcam();
+            
+            toast({
+              title: "Photo Captured",
+              description: "Photo captured successfully. Click 'Process Attendance' to continue."
+            });
+          }
+        }, 'image/jpeg', 0.95);
+      }
+    }
+  };
+
+  // Cleanup webcam on unmount
+  useEffect(() => {
+    return () => {
+      stopWebcam();
+    };
+  }, []);
 
   const processAttendance = async () => {
     if (!selectedSubject || !selectedImage) {
@@ -227,21 +296,43 @@ const TakeAttendance: React.FC = () => {
                   variant="outline"
                   onClick={() => fileInputRef.current?.click()}
                   className="flex items-center gap-2"
+                  disabled={isWebcamActive}
                 >
                   <Upload className="h-4 w-4" />
                   Upload Image
                 </Button>
                 
-                <Button
-                  variant="outline"
-                  onClick={handleWebcamCapture}
-                  className="flex items-center gap-2"
-                >
-                  <Camera className="h-4 w-4" />
-                  Use Webcam
-                </Button>
+                {!isWebcamActive ? (
+                  <Button
+                    variant="outline"
+                    onClick={startWebcam}
+                    className="flex items-center gap-2"
+                  >
+                    <Camera className="h-4 w-4" />
+                    Use Webcam
+                  </Button>
+                ) : (
+                  <>
+                    <Button
+                      variant="default"
+                      onClick={capturePhoto}
+                      className="flex items-center gap-2"
+                    >
+                      <Camera className="h-4 w-4" />
+                      Capture Photo
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={stopWebcam}
+                      className="flex items-center gap-2"
+                    >
+                      <XCircle className="h-4 w-4" />
+                      Cancel
+                    </Button>
+                  </>
+                )}
 
-                {(selectedSubject || selectedImage) && (
+                {(selectedSubject || selectedImage) && !isWebcamActive && (
                   <Button
                     variant="outline"
                     onClick={resetForm}
@@ -256,13 +347,25 @@ const TakeAttendance: React.FC = () => {
               <input
                 ref={fileInputRef}
                 type="file"
-                accept="image/*"
                 onChange={handleImageUpload}
                 className="hidden"
               />
 
+              {/* Webcam Video */}
+              {isWebcamActive && (
+                <div className="mt-4 relative">
+                  <video
+                    ref={videoRef}
+                    autoPlay
+                    playsInline
+                    className="w-full rounded-lg border"
+                  />
+                  <canvas ref={canvasRef} className="hidden" />
+                </div>
+              )}
+
               {/* Image Preview */}
-              {imagePreview && (
+              {imagePreview && !isWebcamActive && (
                 <div className="mt-4">
                   <img
                     src={imagePreview}

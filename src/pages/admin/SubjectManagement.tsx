@@ -39,46 +39,46 @@ const SubjectManagement: React.FC = () => {
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Load real data from API
+  // Load real data from API - moved outside useEffect so it can be called from handlers
+  const loadData = async () => {
+    try {
+      setIsLoading(true);
+      
+      // Load teachers
+      const fetchedTeachers = await apiService.getTeachers();
+      const formattedTeachers: Teacher[] = fetchedTeachers.map(teacher => ({
+        id: teacher.id.toString(),
+        name: teacher.name,
+        email: teacher.email
+      }));
+      setTeachers(formattedTeachers);
+
+      // Load subjects
+      const fetchedSubjects = await apiService.getSubjects();
+      const formattedSubjects: Subject[] = fetchedSubjects.map(subject => ({
+        id: subject.id.toString(),
+        name: subject.name,
+        description: subject.description || '',
+        teacherId: subject.teacher_id?.toString() || '',
+        teacherName: subject.teacher?.name || 'Unassigned'
+      }));
+      setSubjects(formattedSubjects);
+      
+    } catch (error) {
+      console.error('Error loading data:', error);
+      toast({
+        title: "Error",
+        description: "Failed to load subjects and teachers. Please try again.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const loadData = async () => {
-      try {
-        setIsLoading(true);
-        
-        // Load teachers
-        const fetchedTeachers = await apiService.getTeachers();
-        const formattedTeachers: Teacher[] = fetchedTeachers.map(teacher => ({
-          id: teacher.id.toString(),
-          name: teacher.name,
-          email: teacher.email
-        }));
-        setTeachers(formattedTeachers);
-
-        // Load subjects
-        const fetchedSubjects = await apiService.getSubjects();
-        const formattedSubjects: Subject[] = fetchedSubjects.map(subject => ({
-          id: subject.id.toString(),
-          name: subject.name,
-          description: subject.description || '',
-          teacherId: subject.teacher_id?.toString() || '',
-          teacherName: subject.teacher?.name || 'Unassigned'
-        }));
-        setSubjects(formattedSubjects);
-        
-      } catch (error) {
-        console.error('Error loading data:', error);
-        toast({
-          title: "Error",
-          description: "Failed to load subjects and teachers. Please try again.",
-          variant: "destructive"
-        });
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
     loadData();
-  }, [toast]);
+  }, []);
 
   // Mock data removed - now using real API data above
   const oldMockSubjects: Subject[] = [
@@ -127,7 +127,7 @@ const SubjectManagement: React.FC = () => {
     subject.teacherName.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     const selectedTeacher = teachers.find(t => t.id === formData.teacherId);
@@ -140,40 +140,45 @@ const SubjectManagement: React.FC = () => {
       return;
     }
 
-    if (editingSubject) {
-      // Update existing subject
-      setSubjects(subjects.map(subject => 
-        subject.id === editingSubject.id 
-          ? { 
-              ...subject, 
-              name: formData.name, 
-              description: formData.description,
-              teacherId: formData.teacherId,
-              teacherName: selectedTeacher.name
-            }
-          : subject
-      ));
+    try {
+      if (editingSubject) {
+        // Update existing subject via API
+        await apiService.updateSubject(parseInt(editingSubject.id), {
+          name: formData.name,
+          description: formData.description,
+          teacher_id: parseInt(formData.teacherId)
+        });
+        
+        toast({
+          title: "Success",
+          description: "Subject updated successfully"
+        });
+      } else {
+        // Create new subject via API
+        await apiService.createSubject({
+          name: formData.name,
+          code: `SUB${Date.now()}`, // Auto-generate code
+          description: formData.description,
+          teacher_id: parseInt(formData.teacherId)
+        });
+        
+        toast({
+          title: "Success",
+          description: "Subject created successfully"
+        });
+      }
+
+      // Reload subjects from API
+      await loadData();
+      handleCloseDialog();
+    } catch (error) {
+      console.error('Error saving subject:', error);
       toast({
-        title: "Success",
-        description: "Subject updated successfully"
-      });
-    } else {
-      // Add new subject
-      const newSubject: Subject = {
-        id: Date.now().toString(),
-        name: formData.name,
-        description: formData.description,
-        teacherId: formData.teacherId,
-        teacherName: selectedTeacher.name
-      };
-      setSubjects([...subjects, newSubject]);
-      toast({
-        title: "Success",
-        description: "Subject created successfully"
+        title: "Error",
+        description: "Failed to save subject",
+        variant: "destructive"
       });
     }
-
-    handleCloseDialog();
   };
 
   const handleEdit = (subject: Subject) => {
@@ -186,12 +191,29 @@ const SubjectManagement: React.FC = () => {
     setIsDialogOpen(true);
   };
 
-  const handleDelete = (subjectId: string) => {
-    setSubjects(subjects.filter(subject => subject.id !== subjectId));
-    toast({
-      title: "Success",
-      description: "Subject deleted successfully"
-    });
+  const handleDelete = async (subjectId: string) => {
+    if (!window.confirm('Are you sure you want to delete this subject? This will remove all enrollments and attendance records for this subject.')) {
+      return;
+    }
+
+    try {
+      await apiService.deleteSubject(parseInt(subjectId));
+      
+      toast({
+        title: "Success",
+        description: "Subject deleted successfully"
+      });
+      
+      // Reload subjects from API
+      await loadData();
+    } catch (error) {
+      console.error('Error deleting subject:', error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to delete subject",
+        variant: "destructive"
+      });
+    }
   };
 
   const handleCloseDialog = () => {

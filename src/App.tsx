@@ -13,8 +13,11 @@ import UserManagement from "./pages/admin/UserManagement";
 import SubjectManagement from "./pages/admin/SubjectManagement";
 import Analytics from "./pages/admin/Analytics";
 import ScheduleManagement from "./pages/admin/ScheduleManagement";
+import FaceManagement from "./pages/admin/FaceManagement";
+import EnrollmentManagement from "./pages/admin/EnrollmentManagement";
 import TakeAttendance from "./pages/teacher/TakeAttendance";
 import ViewAttendance from "./pages/teacher/ViewAttendance";
+import MySubjects from "./pages/teacher/MySubjects";
 import StudentAttendance from "./pages/student/StudentAttendance";
 import StudentSchedule from "./pages/student/Schedule";
 import NotFound from "./pages/NotFound";
@@ -93,6 +96,22 @@ const AppRoutes: React.FC = () => {
             </ProtectedRoute>
           } 
         />
+        <Route 
+          path="/admin/faces" 
+          element={
+            <ProtectedRoute allowedRoles={['admin']}>
+              <FaceManagement />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/admin/enrollments" 
+          element={
+            <ProtectedRoute allowedRoles={['admin']}>
+              <EnrollmentManagement />
+            </ProtectedRoute>
+          } 
+        />
         
         {/* Teacher Routes */}
         <Route 
@@ -108,6 +127,14 @@ const AppRoutes: React.FC = () => {
           element={
             <ProtectedRoute allowedRoles={['teacher']}>
               <ViewAttendance />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/teacher/subjects" 
+          element={
+            <ProtectedRoute allowedRoles={['teacher']}>
+              <MySubjects />
             </ProtectedRoute>
           } 
         />

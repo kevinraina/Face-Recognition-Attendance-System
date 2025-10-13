@@ -13,18 +13,18 @@ def create_initial_admin():
     
     try:
         # Check if admin already exists
-        existing_admin = db.query(User).filter(User.email == "admin@university.edu").first()
+        existing_admin = db.query(User).filter(User.email == "admin@viit.ac.in").first()
         if existing_admin:
-            print("[OK] Admin user already exists!")
-            print("   Email: admin@university.edu")
-            print("   You can login with your password")
+            print("✅ Admin user already exists!")
+            print("   Email: admin@viit.ac.in")
+            print("   Password: viit@admin123")
             return
         
         # Create admin user
         admin = User(
-            name="Admin User",
-            email="admin@university.edu",
-            password_hash=get_password_hash("admin123"),
+            name="System Administrator",
+            email="admin@viit.ac.in",
+            password_hash=get_password_hash("viit@admin123"),
             role="admin",
             is_active=True
         )
@@ -32,11 +32,11 @@ def create_initial_admin():
         db.add(admin)
         db.commit()
         
-        print("[OK] Initial admin user created successfully!")
+        print("✅ VIIT admin user created successfully!")
         print("=" * 50)
-        print("Admin Credentials:")
-        print("  Email: admin@university.edu")
-        print("  Password: admin123")
+        print("VIIT Admin Credentials:")
+        print("  Email: admin@viit.ac.in")
+        print("  Password: viit@admin123")
         print("=" * 50)
         print("\n[NEXT] Run seed_data.py to populate the database")
         print("   python seed_data.py")

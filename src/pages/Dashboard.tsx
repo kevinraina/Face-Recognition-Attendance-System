@@ -1,12 +1,74 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/contexts/AuthContext';
 import { Users, BookOpen, Camera, Eye, ClipboardList, BarChart3, UserCheck, Calendar } from 'lucide-react';
+import { apiService } from '@/services/api';
 
 const Dashboard: React.FC = () => {
   const { user } = useAuth();
+  const [stats, setStats] = useState({
+    enrolledSubjects: 0,
+    attendanceRate: 0,
+    todayStatus: 'Loading...',
+    totalUsers: 0,
+    myClasses: 0
+  });
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Load real stats based on role
+  useEffect(() => {
+    const loadStats = async () => {
+      if (!user) {
+        setIsLoading(false);
+        return;
+      }
+
+      try {
+        setIsLoading(true);
+
+        if (user.role === 'student') {
+          // Load student stats
+          const attendanceData = await apiService.getStudentAttendance(user.id);
+          
+          const totalSubjects = attendanceData.subjects.length;
+          const avgAttendance = totalSubjects > 0
+            ? Math.round(attendanceData.subjects.reduce((sum: number, sub: any) => sum + sub.attendance_percentage, 0) / totalSubjects)
+            : 0;
+          
+          setStats({
+            enrolledSubjects: totalSubjects,
+            attendanceRate: avgAttendance,
+            todayStatus: avgAttendance >= 75 ? 'Present' : 'Check Records',
+            totalUsers: 0,
+            myClasses: 0
+          });
+        } else if (user.role === 'teacher') {
+          // Load teacher stats
+          const subjectsData = await apiService.getSubjects({ teacher_id: user.id });
+          setStats(prev => ({
+            ...prev,
+            myClasses: subjectsData.length
+          }));
+        } else if (user.role === 'admin') {
+          // Load admin stats
+          const usersData = await apiService.getUsers();
+          setStats(prev => ({
+            ...prev,
+            totalUsers: usersData.length
+          }));
+        }
+        
+      } catch (error) {
+        console.error('Error loading dashboard stats:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadStats();
+  }, [user]);
 
   if (!user) return null;
 
@@ -66,6 +128,20 @@ const Dashboard: React.FC = () => {
             icon: Calendar,
             href: '/admin/schedules',
             color: 'text-indigo-600'
+          },
+          {
+            title: 'Face Management',
+            description: 'View and manage student face photos',
+            icon: Camera,
+            href: '/admin/faces',
+            color: 'text-orange-600'
+          },
+          {
+            title: 'Enrollment Management',
+            description: 'Enroll students in subjects',
+            icon: UserCheck,
+            href: '/admin/enrollments',
+            color: 'text-teal-600'
           }
         ];
       case 'teacher':
@@ -86,9 +162,9 @@ const Dashboard: React.FC = () => {
           },
           {
             title: 'My Subjects',
-            description: 'Manage your assigned subjects',
+            description: 'View your assigned subjects',
             icon: BookOpen,
-            href: '#',
+            href: '/teacher/subjects',
             color: 'text-orange-600'
           }
         ];
@@ -171,56 +247,42 @@ const Dashboard: React.FC = () => {
           })}
         </div>
 
-        {/* Stats Section */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Today's Status
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-foreground">
-                {user.role === 'student' ? 'Present' : 'Active'}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                {user.role === 'student' ? 'Attendance marked' : 'System operational'}
-              </p>
-            </CardContent>
-          </Card>
+        {/* Stats Section - ONLY FOR STUDENTS */}
+        {user.role === 'student' && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  Total Subjects
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-foreground">
+                  {isLoading ? '...' : stats.enrolledSubjects}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {stats.enrolledSubjects === 0 ? 'Not enrolled yet - contact admin' : 'Enrolled this semester'}
+                </p>
+              </CardContent>
+            </Card>
 
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                {user.role === 'admin' ? 'Total Users' : user.role === 'teacher' ? 'My Classes' : 'Enrolled Subjects'}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-foreground">
-                {user.role === 'admin' ? '156' : user.role === 'teacher' ? '5' : '8'}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Active this semester
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                {user.role === 'student' ? 'Attendance Rate' : 'System Health'}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-success">
-                {user.role === 'student' ? '92%' : '100%'}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                {user.role === 'student' ? 'This semester' : 'All systems operational'}
-              </p>
-            </CardContent>
-          </Card>
-        </div>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  Overall Attendance
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className={`text-2xl font-bold ${stats.attendanceRate >= 75 ? 'text-green-600' : stats.attendanceRate >= 50 ? 'text-yellow-600' : 'text-red-600'}`}>
+                  {isLoading ? '...' : stats.enrolledSubjects === 0 ? 'N/A' : `${stats.attendanceRate}%`}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {stats.attendanceRate >= 75 ? 'Good standing' : stats.attendanceRate >= 50 ? 'Needs improvement' : stats.enrolledSubjects === 0 ? 'No data yet' : 'Critical - attend classes!'}
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+        )}
       </div>
     </div>
   );

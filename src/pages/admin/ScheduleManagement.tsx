@@ -261,7 +261,7 @@ const ScheduleManagement: React.FC = () => {
                     id="room"
                     value={formData.room}
                     onChange={(e) => setFormData({...formData, room: e.target.value})}
-                    placeholder="e.g., B101, B102, Lab A"
+                    placeholder=""
                   />
                 </div>
 

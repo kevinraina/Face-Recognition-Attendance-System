@@ -11,9 +11,9 @@ API_URL = "http://localhost:8000/api"
 def create_admin():
     """Create admin user"""
     admin_data = {
-        "name": "Admin User",
-        "email": "admin@university.edu",
-        "password": "admin123",
+        "name": "System Administrator",
+        "email": "admin@viit.ac.in",
+        "password": "viit@admin123",
         "role": "admin"
     }
     
@@ -57,9 +57,9 @@ def seed_database():
     # Create teachers
     print("\n👨‍🏫 Creating teachers...")
     teachers = [
-        {"name": "Dr. Sarah Johnson", "email": "sarah.johnson@university.edu", "password": "teacher123", "role": "teacher"},
-        {"name": "Prof. Michael Chen", "email": "michael.chen@university.edu", "password": "teacher123", "role": "teacher"},
-        {"name": "Dr. Emily Davis", "email": "emily.davis@university.edu", "password": "teacher123", "role": "teacher"},
+        {"name": "Dr. Rajesh Sharma", "email": "rajesh@viit.ac.in", "password": "teacher123", "role": "teacher"},
+        {"name": "Prof. Priya Deshmukh", "email": "priya@viit.ac.in", "password": "teacher123", "role": "teacher"},
+        {"name": "Dr. Amit Kulkarni", "email": "amit@viit.ac.in", "password": "teacher123", "role": "teacher"},
     ]
     
     teacher_ids = []
@@ -70,21 +70,21 @@ def seed_database():
             teacher_ids.append(teacher_id)
             print(f"   ✅ Created: {teacher['name']} (ID: {teacher_id})")
         else:
-            print(f"   ⚠️  Skipped: {teacher['name']} (may already exist)")
+            print(f"   ❌ Failed: {teacher['name']} - Status {response.status_code}: {response.text}")
     
     # Create students
     print("\n👨‍🎓 Creating students...")
     students = [
-        {"name": "Alice Williams", "email": "alice.w@student.edu", "prn": "PRN001", "password": "student123", "role": "student"},
-        {"name": "Bob Martinez", "email": "bob.m@student.edu", "prn": "PRN002", "password": "student123", "role": "student"},
-        {"name": "Carol Thompson", "email": "carol.t@student.edu", "prn": "PRN003", "password": "student123", "role": "student"},
-        {"name": "David Garcia", "email": "david.g@student.edu", "prn": "PRN004", "password": "student123", "role": "student"},
-        {"name": "Emma Rodriguez", "email": "emma.r@student.edu", "prn": "PRN005", "password": "student123", "role": "student"},
-        {"name": "Frank Lee", "email": "frank.l@student.edu", "prn": "PRN006", "password": "student123", "role": "student"},
-        {"name": "Grace Kim", "email": "grace.k@student.edu", "prn": "PRN007", "password": "student123", "role": "student"},
-        {"name": "Henry Patel", "email": "henry.p@student.edu", "prn": "PRN008", "password": "student123", "role": "student"},
-        {"name": "Iris Zhang", "email": "iris.z@student.edu", "prn": "PRN009", "password": "student123", "role": "student"},
-        {"name": "Jack Brown", "email": "jack.b@student.edu", "prn": "PRN010", "password": "student123", "role": "student"},
+        {"name": "Aarav Kumar", "email": "aarav@viit.ac.in", "prn": "VIIT001", "password": "student123", "role": "student"},
+        {"name": "Diya Patel", "email": "diya@viit.ac.in", "prn": "VIIT002", "password": "student123", "role": "student"},
+        {"name": "Arjun Singh", "email": "arjun@viit.ac.in", "prn": "VIIT003", "password": "student123", "role": "student"},
+        {"name": "Ananya Reddy", "email": "ananya@viit.ac.in", "prn": "VIIT004", "password": "student123", "role": "student"},
+        {"name": "Rohan Mehta", "email": "rohan@viit.ac.in", "prn": "VIIT005", "password": "student123", "role": "student"},
+        {"name": "Ishita Joshi", "email": "ishita@viit.ac.in", "prn": "VIIT006", "password": "student123", "role": "student"},
+        {"name": "Aditya Verma", "email": "aditya@viit.ac.in", "prn": "VIIT007", "password": "student123", "role": "student"},
+        {"name": "Kavya Nair", "email": "kavya@viit.ac.in", "prn": "VIIT008", "password": "student123", "role": "student"},
+        {"name": "Vihaan Shah", "email": "vihaan@viit.ac.in", "prn": "VIIT009", "password": "student123", "role": "student"},
+        {"name": "Saanvi Gupta", "email": "saanvi@viit.ac.in", "prn": "VIIT010", "password": "student123", "role": "student"},
     ]
     
     student_ids = []
@@ -95,7 +95,7 @@ def seed_database():
             student_ids.append(student_id)
             print(f"   ✅ Created: {student['name']} - {student['prn']} (ID: {student_id})")
         else:
-            print(f"   ⚠️  Skipped: {student['name']} (may already exist)")
+            print(f"   ❌ Failed: {student['name']} - Status {response.status_code}: {response.text}")
     
     # Create subjects
     print("\n📚 Creating subjects...")
@@ -115,7 +115,7 @@ def seed_database():
             subject_ids.append(subject_id)
             print(f"   ✅ Created: {subject['name']} ({subject['code']}) - ID: {subject_id}")
         else:
-            print(f"   ⚠️  Skipped: {subject['name']} (may already exist)")
+            print(f"   ❌ Failed: {subject['name']} - Status {response.status_code}: {response.text}")
     
     # Enroll students in subjects
     print("\n📝 Enrolling students in subjects...")
@@ -134,16 +134,16 @@ def seed_database():
     
     print("\n" + "=" * 50)
     print("🎉 Database seeding completed successfully!")
-    print("\n📋 Test Credentials:")
+    print("\n📋 VIIT Test Credentials:")
     print("-" * 50)
     print("Admin:")
     print(f"  Email: {admin['email']}")
     print(f"  Password: {admin['password']}")
-    print("\nTeacher (any):")
-    print("  Email: sarah.johnson@university.edu")
+    print("\nTeacher:")
+    print("  Email: rajesh@viit.ac.in")
     print("  Password: teacher123")
-    print("\nStudent (any):")
-    print("  Email: alice.w@student.edu")
+    print("\nStudent:")
+    print("  Email: aarav@viit.ac.in")
     print("  Password: student123")
     print("-" * 50)
     print("\n⚠️  IMPORTANT: Students need to register their faces!")

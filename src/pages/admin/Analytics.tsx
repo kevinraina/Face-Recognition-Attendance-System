@@ -170,24 +170,16 @@ const Analytics: React.FC = () => {
             </CardContent>
           </Card>
 
-          {/* Performance Summary */}
+          {/* Real System Stats */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Award className="h-5 w-5" />
-                System Performance
+                System Overview
               </CardTitle>
-              <CardDescription>Key metrics and achievements</CardDescription>
+              <CardDescription>Current system statistics</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-medium">Face Recognition Accuracy</span>
-                <span className="text-sm font-bold text-green-600">High</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-medium">System Uptime</span>
-                <span className="text-sm font-bold text-green-600">99.9%</span>
-              </div>
               <div className="flex items-center justify-between">
                 <span className="text-sm font-medium">Students Registered</span>
                 <span className="text-sm font-bold">{stats.totalStudents}</span>
@@ -197,8 +189,16 @@ const Analytics: React.FC = () => {
                 <span className="text-sm font-bold">{stats.totalTeachers}</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-sm font-medium">Total Classes</span>
+                <span className="text-sm font-medium">Total Subjects</span>
+                <span className="text-sm font-bold">{stats.totalSubjects}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium">Attendance Sessions</span>
                 <span className="text-sm font-bold">{stats.totalSessions}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium">Average Attendance</span>
+                <span className="text-sm font-bold text-green-600">{stats.averageAttendance}%</span>
               </div>
             </CardContent>
           </Card>
