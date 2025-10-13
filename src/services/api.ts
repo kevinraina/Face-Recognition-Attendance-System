@@ -395,6 +395,71 @@ class ApiService {
 
     return this.handleResponse<AttendanceSession[]>(response);
   }
+
+  // Schedule Management
+  async getSchedules(params: { teacher_id?: number; subject_id?: number; student_id?: number } = {}): Promise<any[]> {
+    const searchParams = new URLSearchParams();
+    if (params.teacher_id) {
+      searchParams.append('teacher_id', params.teacher_id.toString());
+    }
+    if (params.subject_id) {
+      searchParams.append('subject_id', params.subject_id.toString());
+    }
+    if (params.student_id) {
+      searchParams.append('student_id', params.student_id.toString());
+    }
+    
+    const response = await fetch(`${API_BASE_URL}/schedules?${searchParams}`, {
+      headers: this.getHeaders(),
+    });
+    return this.handleResponse(response);
+  }
+
+  async createSchedule(scheduleData: {
+    subject_id: number;
+    teacher_id: number;
+    day_of_week: string;
+    start_time: string;
+    end_time: string;
+    room?: string;
+    class_type: string;
+  }): Promise<any> {
+    const formData = new FormData();
+    formData.append('subject_id', scheduleData.subject_id.toString());
+    formData.append('teacher_id', scheduleData.teacher_id.toString());
+    formData.append('day_of_week', scheduleData.day_of_week);
+    formData.append('start_time', scheduleData.start_time);
+    formData.append('end_time', scheduleData.end_time);
+    formData.append('class_type', scheduleData.class_type);
+    if (scheduleData.room) {
+      formData.append('room', scheduleData.room);
+    }
+
+    const response = await fetch(`${API_BASE_URL}/schedules`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${this.token}`
+      },
+      body: formData
+    });
+    return this.handleResponse(response);
+  }
+
+  async deleteSchedule(scheduleId: number): Promise<any> {
+    const response = await fetch(`${API_BASE_URL}/schedules/${scheduleId}`, {
+      method: 'DELETE',
+      headers: this.getHeaders(),
+    });
+    return this.handleResponse(response);
+  }
+
+  // Get list of teachers
+  async getTeachersList(): Promise<any[]> {
+    const response = await fetch(`${API_BASE_URL}/users/teachers/list`, {
+      headers: this.getHeaders(),
+    });
+    return this.handleResponse(response);
+  }
 }
 
 // Export singleton instance
