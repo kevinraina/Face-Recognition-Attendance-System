@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from datetime import datetime
 
 # Import local modules
-from database import get_db, init_db, User, Subject, Enrollment, AttendanceSession, AttendanceRecord
+from database import get_db, init_db, User, Subject, Enrollment, AttendanceSession, AttendanceRecord, Schedule
 from auth import (
     get_password_hash, 
     verify_password, 
@@ -668,6 +668,145 @@ async def get_student_attendance(
         subjects=subject_stats,
         overall_percentage=round(overall_percentage, 2)
     )
+
+# --------------------------
+# Schedule Management Routes
+# --------------------------
+@app.get("/api/schedules", tags=["Schedule Management"])
+async def get_schedules(
+    teacher_id: Optional[int] = None,
+    subject_id: Optional[int] = None,
+    student_id: Optional[int] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get schedules - teachers see their schedules, students see their enrolled subjects' schedules"""
+    try:
+        query = db.query(Schedule)
+        
+        if current_user.role == "teacher":
+            # Teachers see their own schedules
+            query = query.filter(Schedule.teacher_id == current_user.id)
+        elif current_user.role == "student":
+            # Students see schedules for their enrolled subjects
+            enrolled_subjects = db.query(Enrollment.subject_id).filter(Enrollment.student_id == current_user.id).all()
+            subject_ids = [e.subject_id for e in enrolled_subjects]
+            if subject_ids:
+                query = query.filter(Schedule.subject_id.in_(subject_ids))
+            else:
+                return []
+        
+        # Apply additional filters if provided
+        if teacher_id:
+            query = query.filter(Schedule.teacher_id == teacher_id)
+        if subject_id:
+            query = query.filter(Schedule.subject_id == subject_id)
+            
+        schedules = query.all()
+        
+        # Format response
+        result = []
+        for schedule in schedules:
+            subject = db.query(Subject).filter(Subject.id == schedule.subject_id).first()
+            teacher = db.query(User).filter(User.id == schedule.teacher_id).first()
+            
+            result.append({
+                "id": schedule.id,
+                "subject_id": schedule.subject_id,
+                "subject_name": subject.name if subject else "Unknown",
+                "teacher_id": schedule.teacher_id,
+                "teacher_name": teacher.name if teacher else "Unknown",
+                "day_of_week": schedule.day_of_week,
+                "start_time": schedule.start_time,
+                "end_time": schedule.end_time,
+                "room": schedule.room,
+                "class_type": schedule.class_type,
+                "created_at": schedule.created_at.isoformat()
+            })
+        
+        return result
+        
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+@app.post("/api/schedules", tags=["Schedule Management"])
+async def create_schedule(
+    subject_id: int = Form(...),
+    teacher_id: int = Form(...),
+    day_of_week: str = Form(...),
+    start_time: str = Form(...),
+    end_time: str = Form(...),
+    room: str = Form(None),
+    class_type: str = Form(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(["admin"]))
+):
+    """Create a new schedule (admin only)"""
+    try:
+        # Verify subject and teacher exist
+        subject = db.query(Subject).filter(Subject.id == subject_id).first()
+        if not subject:
+            raise HTTPException(status_code=404, detail="Subject not found")
+            
+        teacher = db.query(User).filter(User.id == teacher_id, User.role == "teacher").first()
+        if not teacher:
+            raise HTTPException(status_code=404, detail="Teacher not found")
+        
+        # Create new schedule
+        schedule = Schedule(
+            subject_id=subject_id,
+            teacher_id=teacher_id,
+            day_of_week=day_of_week,
+            start_time=start_time,
+            end_time=end_time,
+            room=room,
+            class_type=class_type
+        )
+        
+        db.add(schedule)
+        db.commit()
+        db.refresh(schedule)
+        
+        return {
+            "id": schedule.id,
+            "subject_id": schedule.subject_id,
+            "teacher_id": schedule.teacher_id,
+            "day_of_week": schedule.day_of_week,
+            "start_time": schedule.start_time,
+            "end_time": schedule.end_time,
+            "room": schedule.room,
+            "class_type": schedule.class_type,
+            "message": "Schedule created successfully"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+@app.delete("/api/schedules/{schedule_id}", tags=["Schedule Management"])
+async def delete_schedule(
+    schedule_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(["admin"]))
+):
+    """Delete a schedule (admin only)"""
+    try:
+        schedule = db.query(Schedule).filter(Schedule.id == schedule_id).first()
+        if not schedule:
+            raise HTTPException(status_code=404, detail="Schedule not found")
+        
+        db.delete(schedule)
+        db.commit()
+        
+        return {"message": "Schedule deleted successfully"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        return JSONResponse(status_code=500, content={"error": str(e)})
 
 # --------------------------
 # Health Check

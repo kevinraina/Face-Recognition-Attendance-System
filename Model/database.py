@@ -97,6 +97,27 @@ class AttendanceRecord(Base):
     session = relationship("AttendanceSession", back_populates="attendance_records")
     student = relationship("User", back_populates="attendance_records")
 
+class Schedule(Base):
+    __tablename__ = "schedules"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    subject_id = Column(Integer, ForeignKey("subjects.id"), nullable=False)
+    teacher_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    day_of_week = Column(String, nullable=False)  # Monday, Tuesday, etc.
+    start_time = Column(String, nullable=False)  # "09:00"
+    end_time = Column(String, nullable=False)  # "10:00"
+    room = Column(String, nullable=True)
+    class_type = Column(String, nullable=False)  # Lecture, Lab, Tutorial
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    subject = relationship("Subject", back_populates="schedules")
+    teacher = relationship("User", back_populates="schedules")
+
+# Update existing relationships
+User.schedules = relationship("Schedule", back_populates="teacher")
+Subject.schedules = relationship("Schedule", back_populates="subject")
+
 # Create all tables
 def init_db():
     Base.metadata.create_all(bind=engine)
