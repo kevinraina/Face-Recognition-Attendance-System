@@ -271,6 +271,131 @@ async def register_student_face(
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
 
+@app.get("/api/students/{student_id}/faces", tags=["Face Recognition"])
+async def get_student_faces(
+    student_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get all face embeddings for a student"""
+    student = db.query(User).filter(User.id == student_id, User.role == "student").first()
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+    
+    try:
+        # Search for all face embeddings for this student
+        search_result = client.scroll(
+            collection_name=COLLECTION_NAME,
+            scroll_filter=models.Filter(
+                must=[
+                    models.FieldCondition(
+                        key="user_id",
+                        match=models.MatchValue(value=student.id)
+                    )
+                ]
+            ),
+            limit=100  # Get up to 100 face embeddings
+        )
+        
+        faces = []
+        for point in search_result[0]:
+            faces.append({
+                "id": point.id,
+                "registered_at": point.payload.get("registered_at", "Unknown"),
+                "confidence": "N/A"
+            })
+        
+        return {
+            "student_id": student.id,
+            "student_name": student.name,
+            "total_faces": len(faces),
+            "faces": faces
+        }
+    
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+@app.delete("/api/students/{student_id}/faces/{face_id}", tags=["Face Recognition"])
+async def delete_specific_face(
+    student_id: int,
+    face_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Delete a specific face embedding for a student"""
+    student = db.query(User).filter(User.id == student_id, User.role == "student").first()
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+    
+    try:
+        # Delete specific face embedding by ID
+        client.delete(
+            collection_name=COLLECTION_NAME,
+            points_selector=models.PointIdsList(
+                points=[face_id]
+            )
+        )
+        
+        # Check if student has any remaining faces
+        remaining_faces = client.scroll(
+            collection_name=COLLECTION_NAME,
+            scroll_filter=models.Filter(
+                must=[
+                    models.FieldCondition(
+                        key="user_id",
+                        match=models.MatchValue(value=student.id)
+                    )
+                ]
+            ),
+            limit=1
+        )
+        
+        # Update user record if no faces remain
+        if not remaining_faces[0]:
+            student.face_registered = False
+            db.commit()
+        
+        return {"status": "deleted", "face_id": face_id, "message": "Face deleted successfully"}
+    
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+@app.delete("/api/students/{student_id}/delete-face", tags=["Face Recognition"])
+async def delete_all_student_faces(
+    student_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Delete all face data for a student"""
+    student = db.query(User).filter(User.id == student_id, User.role == "student").first()
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+    
+    try:
+        # Delete all face embeddings for this student from Qdrant
+        client.delete(
+            collection_name=COLLECTION_NAME,
+            points_selector=models.FilterSelector(
+                filter=models.Filter(
+                    must=[
+                        models.FieldCondition(
+                            key="user_id",
+                            match=models.MatchValue(value=student.id)
+                        )
+                    ]
+                )
+            )
+        )
+        
+        # Update user record
+        student.face_registered = False
+        db.commit()
+        
+        return {"status": "deleted", "student": student.name, "message": "All face data deleted successfully"}
+    
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
 # --------------------------
 # Subject Management Routes
 # --------------------------

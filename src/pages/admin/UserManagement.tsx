@@ -107,11 +107,56 @@ const UserManagement: React.FC = () => {
     }
   };
 
-  const handleFaceFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file && uploadingFaceFor) {
-      handleRegisterFace(uploadingFaceFor, file);
+  const handleFaceFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0 || !uploadingFaceFor) return;
+
+    // Support UNLIMITED uploads - no limit!
+    const imageFiles = Array.from(files).filter(file => {
+      // Very permissive check for Fedora files without extensions
+      if (file.type.startsWith('image/')) return true;
+      
+      // Check extension
+      const extension = file.name.toLowerCase().split('.').pop();
+      const imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'tiff', 'tif'];
+      if (extension && imageExtensions.includes(extension)) return true;
+      
+      // Accept files without extensions (Fedora issue fix)
+      if (!extension || file.type === '') return true;
+      
+      return false;
+    });
+
+    if (imageFiles.length === 0) {
+      toast({
+        title: "Error",
+        description: "No valid image files selected",
+        variant: "destructive"
+      });
+      return;
     }
+
+    // Upload all images
+    let successCount = 0;
+    for (let i = 0; i < imageFiles.length; i++) {
+      try {
+        await handleRegisterFace(uploadingFaceFor, imageFiles[i]);
+        successCount++;
+        
+        // Small delay between uploads
+        if (i < imageFiles.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+      } catch (error) {
+        console.error(`Error uploading photo ${i + 1}:`, error);
+      }
+    }
+
+    toast({
+      title: "Upload Complete",
+      description: `Successfully uploaded ${successCount} out of ${imageFiles.length} photos!`,
+    });
+
     // Reset input
     if (faceInputRef.current) {
       faceInputRef.current.value = '';
@@ -251,11 +296,12 @@ const UserManagement: React.FC = () => {
   return (
     <div className="min-h-screen bg-background">
       <div className="max-w-7xl mx-auto p-6">
-        {/* Hidden file input for face registration */}
+        {/* Hidden file input for face registration - Supports UNLIMITED multiple uploads */}
         <input
           ref={faceInputRef}
           type="file"
-          accept="image/*"
+          accept="*/*"
+          multiple
           onChange={handleFaceFileChange}
           className="hidden"
         />
@@ -440,7 +486,7 @@ const UserManagement: React.FC = () => {
                             className="flex items-center gap-1"
                           >
                             <Camera className="h-3 w-3" />
-                            {uploadingFaceFor === user.id ? 'Uploading...' : 'Register Face'}
+                            {uploadingFaceFor === user.id ? 'Uploading...' : 'Add Photos (Unlimited)'}
                           </Button>
                         )}
                         <Button

@@ -460,6 +460,30 @@ class ApiService {
     });
     return this.handleResponse(response);
   }
+
+  // Face Management
+  async getStudentFaces(studentId: number): Promise<any> {
+    const response = await fetch(`${API_BASE_URL}/students/${studentId}/faces`, {
+      headers: this.getHeaders(),
+    });
+    return this.handleResponse(response);
+  }
+
+  async deleteSpecificFace(studentId: number, faceId: string): Promise<any> {
+    const response = await fetch(`${API_BASE_URL}/students/${studentId}/faces/${faceId}`, {
+      method: 'DELETE',
+      headers: this.getHeaders(),
+    });
+    return this.handleResponse(response);
+  }
+
+  async deleteAllFaces(studentId: number): Promise<any> {
+    const response = await fetch(`${API_BASE_URL}/students/${studentId}/delete-face`, {
+      method: 'DELETE',
+      headers: this.getHeaders(),
+    });
+    return this.handleResponse(response);
+  }
 }
 
 // Export singleton instance
