@@ -32,8 +32,8 @@ const TakeAttendance: React.FC = () => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [selectedSubject, setSelectedSubject] = useState('');
-  const [selectedImage, setSelectedImage] = useState<File | null>(null);
-  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [selectedImages, setSelectedImages] = useState<File[]>([]);  // Changed to array
+  const [imagePreviews, setImagePreviews] = useState<string[]>([]);  // Changed to array
   const [isProcessing, setIsProcessing] = useState(false);
   const [detectedStudents, setDetectedStudents] = useState<Student[]>([]);
   const [showResults, setShowResults] = useState(false);
@@ -71,18 +71,29 @@ const TakeAttendance: React.FC = () => {
   }, [user, toast]);
 
   const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
 
-    // Accept ANY file - user knows what they're doing
-    console.log(`Selected file: ${file.name} (type: ${file.type || 'none'}, size: ${file.size} bytes)`);
+    // Convert FileList to array and handle multiple files
+    const fileArray = Array.from(files);
+    console.log(`Selected ${fileArray.length} file(s)`);
     
-    setSelectedImage(file);
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      setImagePreview(e.target?.result as string);
-    };
-    reader.readAsDataURL(file);
+    setSelectedImages(fileArray);
+    
+    // Create previews for all images
+    const previewPromises = fileArray.map(file => {
+      return new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          resolve(e.target?.result as string);
+        };
+        reader.readAsDataURL(file);
+      });
+    });
+    
+    Promise.all(previewPromises).then(previews => {
+      setImagePreviews(previews);
+    });
   };
 
   const startWebcam = async () => {
@@ -95,9 +106,9 @@ const TakeAttendance: React.FC = () => {
         videoRef.current.srcObject = mediaStream;
         setStream(mediaStream);
         setIsWebcamActive(true);
-        // Clear any previous image
-        setImagePreview(null);
-        setSelectedImage(null);
+        // Clear any previous images
+        setImagePreviews([]);
+        setSelectedImages([]);
       }
     } catch (error) {
       console.error('Error accessing webcam:', error);
@@ -133,13 +144,16 @@ const TakeAttendance: React.FC = () => {
         canvas.toBlob((blob) => {
           if (blob) {
             const file = new File([blob], `webcam-capture-${Date.now()}.jpg`, { type: 'image/jpeg' });
-            setSelectedImage(file);
-            setImagePreview(canvas.toDataURL('image/jpeg'));
+            const dataUrl = canvas.toDataURL('image/jpeg');
+            
+            // Add to existing images
+            setSelectedImages(prev => [...prev, file]);
+            setImagePreviews(prev => [...prev, dataUrl]);
             stopWebcam();
             
             toast({
               title: "Photo Captured",
-              description: "Photo captured successfully. Click 'Process Attendance' to continue."
+              description: "Photo captured successfully. You can capture more or click 'Process Attendance'."
             });
           }
         }, 'image/jpeg', 0.95);
@@ -155,10 +169,10 @@ const TakeAttendance: React.FC = () => {
   }, []);
 
   const processAttendance = async () => {
-    if (!selectedSubject || !selectedImage) {
+    if (!selectedSubject || selectedImages.length === 0) {
       toast({
         title: "Missing Information",
-        description: "Please select a subject and upload/capture an image",
+        description: "Please select a subject and upload/capture at least one image",
         variant: "destructive"
       });
       return;
@@ -172,29 +186,48 @@ const TakeAttendance: React.FC = () => {
         subject_id: parseInt(selectedSubject),
         session_date: new Date().toISOString(),
         class_type: 'lecture',
-        notes: 'Attendance taken via photo recognition'
+        notes: `Attendance taken via ${selectedImages.length} photo(s)`
       });
 
-      // Step 2: Upload image and process
-      const result = await apiService.uploadAttendanceImage(session.id, selectedImage);
+      // Step 2: Upload multiple images and process
+      const formData = new FormData();
+      selectedImages.forEach((image) => {
+        formData.append('images', image);
+      });
       
-      // Step 3: Format detected students
-      const formattedStudents: Student[] = result.detected_students.map(student => ({
-        id: student.student_id.toString(),
-        name: student.name,
-        email: student.email,
-        prn: student.prn || undefined,
-        isPresent: student.detected,
-        confidence: student.confidence || undefined,
-        faceIndex: student.face_index !== undefined ? student.face_index : undefined
-      }));
+      const response = await fetch(`http://localhost:8000/api/attendance/sessions/${session.id}/upload-multiple-images`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: formData
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to process images');
+      }
+
+      const result = await response.json();
+      
+      // Step 3: Format detected students - ONLY PRESENT STUDENTS
+      const formattedStudents: Student[] = result.detected_students
+        .filter((student: any) => student.detected)  // Only present
+        .map((student: any) => ({
+          id: student.student_id.toString(),
+          name: student.name,
+          email: student.email,
+          prn: student.prn || undefined,
+          isPresent: true,  // All are present
+          confidence: student.confidence || undefined,
+          faceIndex: student.face_index !== undefined ? student.face_index : undefined
+        }));
 
       setDetectedStudents(formattedStudents);
       setShowResults(true);
 
       toast({
-        title: "Processing Complete",
-        description: `Detected ${result.total_detected} students present`,
+        title: "Processing Complete!",
+        description: `Processed ${result.total_images_processed} image(s). Found ${result.total_detected} present students out of ${result.total_enrolled} enrolled.`,
       });
     } catch (error) {
       console.error('Error processing attendance:', error);
@@ -219,18 +252,17 @@ const TakeAttendance: React.FC = () => {
   };
 
   const saveAttendance = () => {
-    const presentCount = detectedStudents.filter(s => s.isPresent).length;
-    const totalCount = detectedStudents.length;
+    const presentCount = detectedStudents.length;  // All displayed are present
 
     toast({
       title: "Attendance Saved",
-      description: `Saved attendance for ${totalCount} students (${presentCount} present, ${totalCount - presentCount} absent)`,
+      description: `Successfully saved attendance for ${presentCount} present students!`,
     });
 
     // Reset form
     setSelectedSubject('');
-    setSelectedImage(null);
-    setImagePreview(null);
+    setSelectedImages([]);
+    setImagePreviews([]);
     setDetectedStudents([]);
     setShowResults(false);
     if (fileInputRef.current) {
@@ -240,13 +272,18 @@ const TakeAttendance: React.FC = () => {
 
   const resetForm = () => {
     setSelectedSubject('');
-    setSelectedImage(null);
-    setImagePreview(null);
+    setSelectedImages([]);
+    setImagePreviews([]);
     setDetectedStudents([]);
     setShowResults(false);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
+  };
+
+  const removeImage = (index: number) => {
+    setSelectedImages(prev => prev.filter((_, i) => i !== index));
+    setImagePreviews(prev => prev.filter((_, i) => i !== index));
   };
 
   return (
@@ -289,9 +326,12 @@ const TakeAttendance: React.FC = () => {
 
             {/* Image Upload Section */}
             <div className="space-y-3">
-              <label className="text-sm font-medium">Upload Photo or Use Webcam</label>
+              <label className="text-sm font-medium">
+                Upload Photos or Use Webcam 
+                <span className="text-muted-foreground ml-2">(Unlimited photos supported!)</span>
+              </label>
               
-              <div className="flex gap-3">
+              <div className="flex gap-3 flex-wrap">
                 <Button
                   variant="outline"
                   onClick={() => fileInputRef.current?.click()}
@@ -299,7 +339,7 @@ const TakeAttendance: React.FC = () => {
                   disabled={isWebcamActive}
                 >
                   <Upload className="h-4 w-4" />
-                  Upload Image
+                  Upload Images
                 </Button>
                 
                 {!isWebcamActive ? (
@@ -327,12 +367,12 @@ const TakeAttendance: React.FC = () => {
                       className="flex items-center gap-2"
                     >
                       <XCircle className="h-4 w-4" />
-                      Cancel
+                      Stop Webcam
                     </Button>
                   </>
                 )}
 
-                {(selectedSubject || selectedImage) && !isWebcamActive && (
+                {(selectedSubject || selectedImages.length > 0) && !isWebcamActive && (
                   <Button
                     variant="outline"
                     onClick={resetForm}
@@ -342,11 +382,19 @@ const TakeAttendance: React.FC = () => {
                     Reset
                   </Button>
                 )}
+
+                {selectedImages.length > 0 && (
+                  <Badge variant="secondary" className="text-sm py-2 px-3">
+                    {selectedImages.length} photo{selectedImages.length !== 1 ? 's' : ''} selected
+                  </Badge>
+                )}
               </div>
 
               <input
                 ref={fileInputRef}
                 type="file"
+                multiple
+                accept="image/*"
                 onChange={handleImageUpload}
                 className="hidden"
               />
@@ -361,17 +409,35 @@ const TakeAttendance: React.FC = () => {
                     className="w-full rounded-lg border"
                   />
                   <canvas ref={canvasRef} className="hidden" />
+                  <p className="text-sm text-muted-foreground mt-2">
+                    Capture multiple photos from different angles for better coverage
+                  </p>
                 </div>
               )}
 
-              {/* Image Preview */}
-              {imagePreview && !isWebcamActive && (
+              {/* Image Previews Grid */}
+              {imagePreviews.length > 0 && !isWebcamActive && (
                 <div className="mt-4">
-                  <img
-                    src={imagePreview}
-                    alt="Uploaded class photo"
-                    className="max-w-full h-auto max-h-64 rounded-lg border"
-                  />
+                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                    {imagePreviews.map((preview, index) => (
+                      <div key={index} className="relative group">
+                        <img
+                          src={preview}
+                          alt={`Class photo ${index + 1}`}
+                          className="w-full h-32 object-cover rounded-lg border"
+                        />
+                        <button
+                          onClick={() => removeImage(index)}
+                          className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                        >
+                          <XCircle className="h-4 w-4" />
+                        </button>
+                        <div className="absolute bottom-1 left-1 bg-black/70 text-white text-xs px-2 py-1 rounded">
+                          Photo {index + 1}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
@@ -379,50 +445,31 @@ const TakeAttendance: React.FC = () => {
             {/* Process Button */}
             <Button
               onClick={processAttendance}
-              disabled={!selectedSubject || !selectedImage || isProcessing}
+              disabled={!selectedSubject || selectedImages.length === 0 || isProcessing}
               className="w-full"
               size="lg"
             >
-              {isProcessing ? 'Processing...' : 'Process Attendance'}
+              {isProcessing ? 'Processing...' : `Process Attendance (${selectedImages.length} photo${selectedImages.length !== 1 ? 's' : ''})`}
             </Button>
           </CardContent>
         </Card>
 
-        {/* Results Section - Beautiful Detection UI */}
+        {/* Results Section - Beautiful Detection UI - ONLY PRESENT STUDENTS */}
         {showResults && (
           <div className="space-y-6">
             {/* Stats Overview */}
-            <Card className="bg-gradient-to-br from-primary/10 via-primary/5 to-background border-primary/20">
+            <Card className="bg-gradient-to-br from-green-500/10 via-green-400/5 to-background border-green-500/20">
               <CardContent className="pt-6">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  <div className="text-center">
-                    <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-green-500/10 mb-3">
-                      <CheckCircle2 className="h-8 w-8 text-green-500" />
-                    </div>
-                    <div className="text-3xl font-bold text-green-500">
-                      {detectedStudents.filter(s => s.isPresent).length}
-                    </div>
-                    <div className="text-sm text-muted-foreground mt-1">Present</div>
+                <div className="text-center">
+                  <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-green-500/10 mb-4">
+                    <CheckCircle2 className="h-12 w-12 text-green-500" />
                   </div>
-                  
-                  <div className="text-center">
-                    <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-red-500/10 mb-3">
-                      <XCircle className="h-8 w-8 text-red-500" />
-                    </div>
-                    <div className="text-3xl font-bold text-red-500">
-                      {detectedStudents.filter(s => !s.isPresent).length}
-                    </div>
-                    <div className="text-sm text-muted-foreground mt-1">Absent</div>
+                  <div className="text-5xl font-bold text-green-500 mb-2">
+                    {detectedStudents.length}
                   </div>
-                  
-                  <div className="text-center">
-                    <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-blue-500/10 mb-3">
-                      <Users className="h-8 w-8 text-blue-500" />
-                    </div>
-                    <div className="text-3xl font-bold text-blue-500">
-                      {Math.round((detectedStudents.filter(s => s.isPresent).length / detectedStudents.length) * 100)}%
-                    </div>
-                    <div className="text-sm text-muted-foreground mt-1">Attendance Rate</div>
+                  <div className="text-lg font-medium text-foreground">Students Present</div>
+                  <div className="text-sm text-muted-foreground mt-2">
+                    Detected across {selectedImages.length} photo{selectedImages.length !== 1 ? 's' : ''}
                   </div>
                 </div>
               </CardContent>
@@ -432,104 +479,86 @@ const TakeAttendance: React.FC = () => {
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
-                  <Sparkles className="h-5 w-5 text-primary" />
-                  Detected Students
+                  <Sparkles className="h-5 w-5 text-green-500" />
+                  Present Students - AI Verified
                 </CardTitle>
                 <CardDescription>
-                  AI-powered face recognition results. Click to adjust if needed.
+                  These students were successfully identified in the uploaded photos. All confidence scores above threshold.
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                  {detectedStudents
-                    .sort((a, b) => (b.isPresent ? 1 : 0) - (a.isPresent ? 1 : 0))
-                    .map((student) => (
-                    <div
-                      key={student.id}
-                      onClick={() => toggleStudentPresence(student.id)}
-                      className={`
-                        relative p-4 rounded-xl border-2 transition-all duration-300 cursor-pointer
-                        hover:scale-[1.02] hover:shadow-lg
-                        ${student.isPresent 
-                          ? 'bg-green-50 dark:bg-green-950/20 border-green-500 shadow-green-500/20' 
-                          : 'bg-red-50 dark:bg-red-950/20 border-red-300 dark:border-red-900'
-                        }
-                      `}
-                    >
-                      {/* Status Badge */}
-                      <div className="absolute top-2 right-2">
-                        {student.isPresent ? (
-                          <Badge className="bg-green-500 hover:bg-green-600">
-                            <CheckCircle2 className="h-3 w-3 mr-1" />
-                            Present
-                          </Badge>
-                        ) : (
-                          <Badge variant="destructive">
-                            <XCircle className="h-3 w-3 mr-1" />
-                            Absent
-                          </Badge>
-                        )}
-                      </div>
-
-                      <div className="flex items-start gap-4">
-                        {/* Avatar */}
-                        <Avatar className={`h-16 w-16 border-2 ${
-                          student.isPresent ? 'border-green-500' : 'border-red-300 dark:border-red-900'
-                        }`}>
-                          <AvatarFallback className={`text-lg font-bold ${
-                            student.isPresent 
-                              ? 'bg-green-500 text-white' 
-                              : 'bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400'
-                          }`}>
-                            {student.name.split(' ').map(n => n[0]).join('').substring(0, 2)}
-                          </AvatarFallback>
-                        </Avatar>
-
-                        {/* Student Info */}
-                        <div className="flex-1 min-w-0">
-                          <div className="font-semibold text-lg text-foreground truncate">
-                            {student.name}
+                {detectedStudents.length === 0 ? (
+                  <div className="text-center py-12">
+                    <AlertCircle className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                    <p className="text-lg font-medium text-muted-foreground">No students detected</p>
+                    <p className="text-sm text-muted-foreground mt-2">Try uploading more photos or from different angles</p>
+                  </div>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                      {detectedStudents
+                        .sort((a, b) => (b.confidence || 0) - (a.confidence || 0))
+                        .map((student) => (
+                        <div
+                          key={student.id}
+                          className="relative p-4 rounded-xl border-2 bg-green-50 dark:bg-green-950/20 border-green-500 shadow-green-500/20 transition-all duration-300 hover:scale-[1.02] hover:shadow-lg"
+                        >
+                          {/* Status Badge */}
+                          <div className="absolute top-2 right-2">
+                            <Badge className="bg-green-500 hover:bg-green-600">
+                              <CheckCircle2 className="h-3 w-3 mr-1" />
+                              Present
+                            </Badge>
                           </div>
-                          <div className="text-sm text-muted-foreground truncate">
-                            {student.email}
-                          </div>
-                          {student.prn && (
-                            <div className="text-xs font-mono text-muted-foreground mt-1">
-                              PRN: {student.prn}
-                            </div>
-                          )}
-                          
-                          {/* Confidence Score */}
-                          {student.confidence !== undefined && student.isPresent && (
-                            <div className="flex items-center gap-2 mt-2">
-                              <div className="flex-1 h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                                <div 
-                                  className="h-full bg-gradient-to-r from-green-400 to-green-600 transition-all duration-500"
-                                  style={{ width: `${student.confidence * 100}%` }}
-                                />
+
+                          <div className="flex items-start gap-4">
+                            {/* Avatar */}
+                            <Avatar className="h-16 w-16 border-2 border-green-500">
+                              <AvatarFallback className="text-lg font-bold bg-green-500 text-white">
+                                {student.name.split(' ').map(n => n[0]).join('').substring(0, 2)}
+                              </AvatarFallback>
+                            </Avatar>
+
+                            {/* Student Info */}
+                            <div className="flex-1 min-w-0">
+                              <div className="font-semibold text-lg text-foreground truncate">
+                                {student.name}
                               </div>
-                              <span className="text-xs font-medium text-green-600 dark:text-green-400">
-                                {Math.round(student.confidence * 100)}%
-                              </span>
+                              <div className="text-sm text-muted-foreground truncate">
+                                {student.email}
+                              </div>
+                              {student.prn && (
+                                <div className="text-xs font-mono text-muted-foreground mt-1">
+                                  PRN: {student.prn}
+                                </div>
+                              )}
+                              
+                              {/* Confidence Score */}
+                              {student.confidence !== undefined && (
+                                <div className="flex items-center gap-2 mt-2">
+                                  <div className="flex-1 h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                                    <div 
+                                      className="h-full bg-gradient-to-r from-green-400 to-green-600 transition-all duration-500"
+                                      style={{ width: `${student.confidence * 100}%` }}
+                                    />
+                                  </div>
+                                  <span className="text-xs font-medium text-green-600 dark:text-green-400">
+                                    {Math.round(student.confidence * 100)}%
+                                  </span>
+                                </div>
+                              )}
                             </div>
-                          )}
-                          
-                          {!student.isPresent && student.confidence === undefined && (
-                            <div className="flex items-center gap-1 mt-2 text-xs text-red-600 dark:text-red-400">
-                              <AlertCircle className="h-3 w-3" />
-                              Not detected in photo
-                            </div>
-                          )}
+                          </div>
                         </div>
-                      </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
 
-                <Button onClick={saveAttendance} className="w-full" size="lg">
-                  <Save className="h-4 w-4 mr-2" />
-                  Save Attendance ({detectedStudents.filter(s => s.isPresent).length} Present, {detectedStudents.filter(s => !s.isPresent).length} Absent)
-                </Button>
+                    <Button onClick={saveAttendance} className="w-full" size="lg">
+                      <Save className="h-4 w-4 mr-2" />
+                      Save Attendance ({detectedStudents.length} Present Students)
+                    </Button>
+                  </>
+                )}
               </CardContent>
             </Card>
           </div>

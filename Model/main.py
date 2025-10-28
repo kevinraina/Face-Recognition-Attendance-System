@@ -795,6 +795,165 @@ async def get_student_attendance(
     )
 
 # --------------------------
+# Multiple Images Processing (NEW - for handling unlimited photos)
+# --------------------------
+@app.post("/api/attendance/sessions/{session_id}/upload-multiple-images", tags=["Attendance"])
+async def upload_multiple_attendance_images(
+    session_id: int,
+    images: List[UploadFile] = File(...),
+    threshold: float = 0.6,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(["teacher"]))
+):
+    """Upload MULTIPLE group photos and detect students across all images - ONLY returns PRESENT students"""
+    session = db.query(AttendanceSession).filter(AttendanceSession.id == session_id).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    try:
+        session.status = "processing"
+        db.commit()
+        
+        # Get all enrolled students
+        enrollments = db.query(Enrollment).filter(
+            Enrollment.subject_id == session.subject_id
+        ).all()
+        enrolled_student_ids = {e.student_id for e in enrollments}
+        
+        detected_students_map = {}  # Map student_id -> best detection
+        all_image_results = []
+        
+        # Process each uploaded image
+        mtcnn_crowd = MTCNN(keep_all=True, device='cpu')
+        
+        for img_idx, image_file in enumerate(images):
+            img_bytes = await image_file.read()
+            
+            # Save image
+            img_path = f"uploads/session_{session_id}_img{img_idx}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg"
+            with open(img_path, "wb") as f:
+                f.write(img_bytes)
+            
+            # Process image for face detection
+            pil_img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
+            face_tensors, probs = mtcnn_crowd(pil_img, return_prob=True)
+            
+            image_result = {
+                "image_name": image_file.filename,
+                "image_index": img_idx,
+                "faces_detected": 0,
+                "students_identified": 0
+            }
+            
+            if face_tensors is None:
+                all_image_results.append(image_result)
+                continue
+            
+            image_result["faces_detected"] = len(face_tensors)
+            
+            # Process each detected face
+            for face_idx, face_tensor in enumerate(face_tensors):
+                with torch.no_grad():
+                    embedding = resnet(face_tensor.unsqueeze(0))
+                embedding = embedding.detach().cpu().numpy()[0]
+                
+                # Search in Qdrant
+                search_result = client.search(
+                    collection_name=COLLECTION_NAME,
+                    query_vector=embedding.tolist(),
+                    limit=1
+                )
+                
+                if search_result and search_result[0].score >= threshold:
+                    student_data = search_result[0].payload
+                    student_id = student_data["user_id"]
+                    
+                    # Only count if enrolled in this subject
+                    if student_id in enrolled_student_ids:
+                        confidence = float(search_result[0].score)
+                        
+                        # Keep the best detection for each student
+                        if student_id not in detected_students_map or confidence > detected_students_map[student_id]["confidence"]:
+                            student = db.query(User).filter(User.id == student_id).first()
+                            detected_students_map[student_id] = {
+                                "student_id": student_id,
+                                "name": student.name,
+                                "email": student.email,
+                                "prn": student.prn,
+                                "confidence": confidence,
+                                "image_index": img_idx,
+                                "face_index": face_idx,
+                                "detection_prob": float(probs[face_idx]) if probs is not None else None
+                            }
+                        
+                        image_result["students_identified"] += 1
+            
+            all_image_results.append(image_result)
+        
+        # Save image paths (store the first one for reference)
+        if images:
+            session.image_path = f"uploads/session_{session_id}_multiple_{len(images)}_images"
+        
+        # Create attendance records for DETECTED (PRESENT) students only
+        detected_ids = set(detected_students_map.keys())
+        
+        # Delete existing records for this session to avoid duplicates
+        db.query(AttendanceRecord).filter(AttendanceRecord.session_id == session_id).delete()
+        
+        # Add records for PRESENT students
+        present_students_list = []
+        for student_id, detection_data in detected_students_map.items():
+            record = AttendanceRecord(
+                session_id=session_id,
+                student_id=student_id,
+                status="present",
+                confidence_score=detection_data["confidence"],
+                manual_override=False
+            )
+            db.add(record)
+            
+            present_students_list.append(DetectedStudent(
+                student_id=detection_data["student_id"],
+                name=detection_data["name"],
+                email=detection_data["email"],
+                prn=detection_data["prn"],
+                detected=True,
+                confidence=detection_data["confidence"],
+                face_index=detection_data["face_index"]
+            ))
+        
+        # Add records for ABSENT students (not displayed in frontend, but tracked in DB)
+        for enrollment in enrollments:
+            if enrollment.student_id not in detected_ids:
+                record = AttendanceRecord(
+                    session_id=session_id,
+                    student_id=enrollment.student_id,
+                    status="absent",
+                    manual_override=False
+                )
+                db.add(record)
+        
+        session.present_students = len(detected_ids)
+        session.status = "completed"
+        db.commit()
+        
+        return {
+            "session_id": session_id,
+            "total_images_processed": len(images),
+            "image_results": all_image_results,
+            "detected_students": present_students_list,  # ONLY PRESENT STUDENTS
+            "total_detected": len(detected_ids),
+            "total_enrolled": len(enrolled_student_ids),
+            "processing_status": "completed",
+            "message": f"Processed {len(images)} images. Found {len(detected_ids)} present students."
+        }
+    
+    except Exception as e:
+        session.status = "error"
+        db.commit()
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+# --------------------------
 # Schedule Management Routes
 # --------------------------
 @app.get("/api/schedules", tags=["Schedule Management"])
