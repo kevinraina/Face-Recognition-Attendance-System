@@ -327,8 +327,7 @@ const TakeAttendance: React.FC = () => {
             {/* Image Upload Section */}
             <div className="space-y-3">
               <label className="text-sm font-medium">
-                Upload Photos or Use Webcam 
-                <span className="text-muted-foreground ml-2">(Unlimited photos supported!)</span>
+                Upload Photos or Use Webcam
               </label>
               
               <div className="flex gap-3 flex-wrap">
