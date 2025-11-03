@@ -18,12 +18,14 @@ interface Student {
   isPresent: boolean;
   confidence?: number;
   faceIndex?: number;
+  face_image_path?: string;
 }
 
 interface UnidentifiedPerson {
   face_index: number;
   confidence?: number;
   reason: string;
+  face_image_path?: string;
 }
 
 interface Subject {
@@ -226,7 +228,8 @@ const TakeAttendance: React.FC = () => {
           prn: student.prn || undefined,
           isPresent: true,  // All are present
           confidence: student.confidence || undefined,
-          faceIndex: student.face_index !== undefined ? student.face_index : undefined
+          faceIndex: student.face_index !== undefined ? student.face_index : undefined,
+          face_image_path: student.face_image_path
         }));
 
       // Step 4: Format unidentified persons
@@ -517,7 +520,7 @@ const TakeAttendance: React.FC = () => {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Sparkles className="h-5 w-5 text-green-500" />
-                  Present Students - AI Verified
+                  Present Students
                 </CardTitle>
                 <CardDescription>
                   These students were successfully identified in the uploaded photos. All confidence scores above threshold.
@@ -549,12 +552,20 @@ const TakeAttendance: React.FC = () => {
                           </div>
 
                           <div className="flex items-start gap-4">
-                            {/* Avatar */}
-                            <Avatar className="h-16 w-16 border-2 border-green-500">
-                              <AvatarFallback className="text-lg font-bold bg-green-500 text-white">
-                                {student.name.split(' ').map(n => n[0]).join('').substring(0, 2)}
-                              </AvatarFallback>
-                            </Avatar>
+                            {/* Face Image or Avatar */}
+                            {student.face_image_path ? (
+                              <img 
+                                src={`http://localhost:8000/${student.face_image_path}`}
+                                alt={student.name}
+                                className="h-16 w-16 rounded-full object-cover border-2 border-green-500"
+                              />
+                            ) : (
+                              <Avatar className="h-16 w-16 border-2 border-green-500">
+                                <AvatarFallback className="text-lg font-bold bg-green-500 text-white">
+                                  {student.name.split(' ').map(n => n[0]).join('').substring(0, 2)}
+                                </AvatarFallback>
+                              </Avatar>
+                            )}
 
                             {/* Student Info */}
                             <div className="flex-1 min-w-0">
@@ -627,12 +638,20 @@ const TakeAttendance: React.FC = () => {
                         </div>
 
                         <div className="flex items-start gap-4">
-                          {/* Avatar */}
-                          <Avatar className="h-16 w-16 border-2 border-yellow-500">
-                            <AvatarFallback className="text-lg font-bold bg-yellow-500 text-white">
-                              ?
-                            </AvatarFallback>
-                          </Avatar>
+                          {/* Face Image */}
+                          {person.face_image_path ? (
+                            <img 
+                              src={`http://localhost:8000/${person.face_image_path}`}
+                              alt={`Unidentified Person ${index + 1}`}
+                              className="h-16 w-16 rounded-full object-cover border-2 border-yellow-500"
+                            />
+                          ) : (
+                            <Avatar className="h-16 w-16 border-2 border-yellow-500">
+                              <AvatarFallback className="text-lg font-bold bg-yellow-500 text-white">
+                                ?
+                              </AvatarFallback>
+                            </Avatar>
+                          )}
 
                           {/* Person Info */}
                           <div className="flex-1 min-w-0">

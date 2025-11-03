@@ -936,6 +936,11 @@ async def upload_multiple_attendance_images(
             
             # Process each detected face
             for face_idx, face_tensor in enumerate(face_tensors):
+                # Save cropped face image
+                face_img_path = f"uploads/session_{session_id}_img{img_idx}_face{face_idx}.jpg"
+                face_pil = Image.fromarray((face_tensor.permute(1, 2, 0).numpy() * 127.5 + 127.5).astype('uint8'))
+                face_pil.save(face_img_path)
+                
                 with torch.no_grad():
                     embedding = resnet(face_tensor.unsqueeze(0))
                 embedding = embedding.detach().cpu().numpy()[0]
@@ -974,6 +979,7 @@ async def upload_multiple_attendance_images(
                                 "confidence": confidence,
                                 "image_index": img_idx,
                                 "face_index": face_idx,
+                                "face_image_path": face_img_path,
                                 "detection_prob": float(probs[face_idx]) if probs is not None else None
                             }
                         
@@ -981,21 +987,23 @@ async def upload_multiple_attendance_images(
                     else:
                         # Face matched someone not enrolled in this subject
                         if face_key not in matched_face_keys:
-                            unidentified_faces.append(UnidentifiedPerson(
-                                face_index=len(unidentified_faces),
-                                confidence=float(search_result[0].score),
-                                reason=f"Student not enrolled in this subject (matched: {student_data.get('name')})"
-                            ))
+                            unidentified_faces.append({
+                                "face_index": len(unidentified_faces),
+                                "confidence": float(search_result[0].score),
+                                "reason": f"Student not enrolled in this subject (matched: {student_data.get('name')})",
+                                "face_image_path": face_img_path
+                            })
                             matched_face_keys.add(face_key)
                 else:
                     # No match above threshold or no match at all
                     if face_key not in matched_face_keys:
                         reason = f"No match above threshold (score: {search_result[0].score:.2f})" if search_result else "No match found in database"
-                        unidentified_faces.append(UnidentifiedPerson(
-                            face_index=len(unidentified_faces),
-                            confidence=float(search_result[0].score) if search_result else None,
-                            reason=reason
-                        ))
+                        unidentified_faces.append({
+                            "face_index": len(unidentified_faces),
+                            "confidence": float(search_result[0].score) if search_result else None,
+                            "reason": reason,
+                            "face_image_path": face_img_path
+                        })
                         matched_face_keys.add(face_key)
             
             all_image_results.append(image_result)
@@ -1022,15 +1030,16 @@ async def upload_multiple_attendance_images(
             )
             db.add(record)
             
-            present_students_list.append(DetectedStudent(
-                student_id=detection_data["student_id"],
-                name=detection_data["name"],
-                email=detection_data["email"],
-                prn=detection_data["prn"],
-                detected=True,
-                confidence=detection_data["confidence"],
-                face_index=detection_data["face_index"]
-            ))
+            present_students_list.append({
+                "student_id": detection_data["student_id"],
+                "name": detection_data["name"],
+                "email": detection_data["email"],
+                "prn": detection_data["prn"],
+                "detected": True,
+                "confidence": detection_data["confidence"],
+                "face_index": detection_data["face_index"],
+                "face_image_path": detection_data["face_image_path"]
+            })
         
         # Add records for ABSENT students (not displayed in frontend, but tracked in DB)
         for enrollment in enrollments:
@@ -1051,8 +1060,8 @@ async def upload_multiple_attendance_images(
             "session_id": session_id,
             "total_images_processed": len(images),
             "image_results": all_image_results,
-            "detected_students": present_students_list,  # ONLY PRESENT STUDENTS
-            "unidentified_persons": [{"face_index": uf.face_index, "confidence": uf.confidence, "reason": uf.reason} for uf in unidentified_faces],
+            "detected_students": present_students_list,  # ONLY PRESENT STUDENTS WITH FACE IMAGES
+            "unidentified_persons": unidentified_faces,  # WITH FACE IMAGES
             "total_detected": len(detected_ids),
             "total_enrolled": len(enrolled_student_ids),
             "processing_status": "completed",
@@ -1214,6 +1223,11 @@ async def health_check():
         "service": "Smart Attendance System",
         "version": "1.0.1 - AUTH BYPASS"
     }
+
+# --------------------------
+# Mount Static Files (MUST BE LAST!)
+# --------------------------
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 if __name__ == "__main__":
     import uvicorn
