@@ -62,42 +62,25 @@ const UserManagement: React.FC = () => {
   };
 
   const handleRegisterFace = async (userId: number, file: File) => {
-    try {
-      setUploadingFaceFor(userId);
-      
-      // Create FormData
-      const formData = new FormData();
-      formData.append('img', file);
-      
-      // Call API
-      const response = await fetch(`http://localhost:8000/api/students/${userId}/register-face`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('access_token')}`
-        },
-        body: formData
-      });
-      
-      if (!response.ok) {
-        throw new Error('Failed to register face');
-      }
-      
-      toast({
-        title: "Success",
-        description: "Face registered successfully! Student can now be detected in group photos.",
-      });
-      
-      // Reload users to update face_registered status
-      loadUsers();
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Failed to register face",
-        variant: "destructive"
-      });
-    } finally {
-      setUploadingFaceFor(null);
+    // Create FormData
+    const formData = new FormData();
+    formData.append('img', file);
+    
+    // Call API
+    const response = await fetch(`http://localhost:8000/api/students/${userId}/register-face`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('access_token')}`
+      },
+      body: formData
+    });
+    
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || 'Failed to register face');
     }
+    
+    return await response.json();
   };
 
   const triggerFaceUpload = (userId: number) => {
@@ -111,36 +94,58 @@ const UserManagement: React.FC = () => {
     const files = e.target.files;
     if (!files || files.length === 0 || !uploadingFaceFor) return;
 
-    // Accept ALL files - no validation! User knows what they're uploading.
+    const userId = uploadingFaceFor;
     const imageFiles = Array.from(files);
     
-    console.log(`Selected ${imageFiles.length} file(s):`, imageFiles.map(f => `${f.name} (type: ${f.type || 'none'})`));
+    console.log(`Starting upload of ${imageFiles.length} file(s) for user ${userId}`);
 
     // Upload all images
     let successCount = 0;
-    for (let i = 0; i < imageFiles.length; i++) {
-      try {
-        await handleRegisterFace(uploadingFaceFor, imageFiles[i]);
-        successCount++;
-        
-        // Small delay between uploads
-        if (i < imageFiles.length - 1) {
-          await new Promise(resolve => setTimeout(resolve, 500));
+    let errorMessages: string[] = [];
+    
+    try {
+      for (let i = 0; i < imageFiles.length; i++) {
+        try {
+          console.log(`Uploading photo ${i + 1}/${imageFiles.length}: ${imageFiles[i].name}`);
+          await handleRegisterFace(userId, imageFiles[i]);
+          successCount++;
+          
+          // Small delay between uploads to avoid overwhelming server
+          if (i < imageFiles.length - 1) {
+            await new Promise(resolve => setTimeout(resolve, 300));
+          }
+        } catch (error) {
+          console.error(`Error uploading photo ${i + 1}:`, error);
+          errorMessages.push(`Photo ${i + 1}: ${error instanceof Error ? error.message : 'Upload failed'}`);
         }
-      } catch (error) {
-        console.error(`Error uploading photo ${i + 1}:`, error);
+      }
+    } finally {
+      // ALWAYS clear the uploading state
+      setUploadingFaceFor(null);
+      
+      // Reset input
+      if (faceInputRef.current) {
+        faceInputRef.current.value = '';
       }
     }
 
+    // Show result
     const photoText = successCount === 1 ? "photo" : "photos";
-    toast({
-      title: "Upload Complete",
-      description: `Successfully uploaded ${successCount} ${photoText}${imageFiles.length > successCount ? ` (${imageFiles.length - successCount} failed)` : ''}`,
-    });
-
-    // Reset input
-    if (faceInputRef.current) {
-      faceInputRef.current.value = '';
+    if (successCount > 0) {
+      toast({
+        title: "Upload Complete",
+        description: `Successfully uploaded ${successCount} ${photoText}${imageFiles.length > successCount ? `. ${imageFiles.length - successCount} failed.` : '!'}`,
+        variant: imageFiles.length > successCount ? "default" : "default"
+      });
+      
+      // Reload users to update face_registered status
+      loadUsers();
+    } else {
+      toast({
+        title: "Upload Failed",
+        description: errorMessages[0] || "All uploads failed. Please try again.",
+        variant: "destructive"
+      });
     }
   };
 

@@ -209,9 +209,51 @@ async def delete_user(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     
-    db.delete(user)
-    db.commit()
-    return {"message": "User deleted successfully"}
+    try:
+        # If student, delete face embeddings from Qdrant
+        if user.role == "student":
+            try:
+                client.delete(
+                    collection_name=COLLECTION_NAME,
+                    points_selector=models.FilterSelector(
+                        filter=models.Filter(
+                            must=[
+                                models.FieldCondition(
+                                    key="user_id",
+                                    match=models.MatchValue(value=user.id)
+                                )
+                            ]
+                        )
+                    )
+                )
+            except Exception as e:
+                print(f"Warning: Could not delete face embeddings: {e}")
+            
+            # Delete enrollments
+            db.query(Enrollment).filter(Enrollment.student_id == user_id).delete()
+            
+            # Delete attendance records
+            db.query(AttendanceRecord).filter(AttendanceRecord.student_id == user_id).delete()
+        
+        # If teacher, handle their subjects and sessions
+        elif user.role == "teacher":
+            # Delete attendance sessions created by this teacher
+            db.query(AttendanceSession).filter(AttendanceSession.teacher_id == user_id).delete()
+            
+            # Delete schedules for this teacher
+            db.query(Schedule).filter(Schedule.teacher_id == user_id).delete()
+            
+            # Unassign subjects (set teacher_id to None instead of deleting subjects)
+            db.query(Subject).filter(Subject.teacher_id == user_id).update({Subject.teacher_id: None})
+        
+        # Finally delete the user
+        db.delete(user)
+        db.commit()
+        return {"message": "User deleted successfully"}
+    
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error deleting user: {str(e)}")
 
 # --------------------------
 # Face Registration Routes
@@ -831,6 +873,13 @@ async def upload_multiple_attendance_images(
     current_user: User = Depends(require_role(["teacher"]))
 ):
     """Upload MULTIPLE group photos and detect students across all images - ONLY returns PRESENT students"""
+    import sys
+    sys.stdout.write(f"\n\n[ATTENDANCE] FUNCTION CALLED - Session {session_id}, Images: {len(images)}\n\n")
+    sys.stdout.flush()
+    print(f"[DEBUG] ========== STARTING ATTENDANCE PROCESSING ==========", flush=True)
+    print(f"[DEBUG] Session ID: {session_id}", flush=True)
+    print(f"[DEBUG] Number of images received: {len(images)}", flush=True)
+    
     session = db.query(AttendanceSession).filter(AttendanceSession.id == session_id).first()
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -845,13 +894,20 @@ async def upload_multiple_attendance_images(
         ).all()
         enrolled_student_ids = {e.student_id for e in enrollments}
         
+        print(f"[DEBUG] Subject ID: {session.subject_id}")
+        print(f"[DEBUG] Enrolled students: {enrolled_student_ids}")
+        print(f"[DEBUG] Number of enrolled students: {len(enrolled_student_ids)}")
+        
         detected_students_map = {}  # Map student_id -> best detection
+        unidentified_faces = []  # Track unidentified faces
+        matched_face_keys = set()  # Track which faces we've already processed
         all_image_results = []
         
         # Process each uploaded image
         mtcnn_crowd = MTCNN(keep_all=True, device='cpu')
         
         for img_idx, image_file in enumerate(images):
+            print(f"[DEBUG] Processing image {img_idx + 1}/{len(images)}: {image_file.filename}")
             img_bytes = await image_file.read()
             
             # Save image
@@ -871,9 +927,11 @@ async def upload_multiple_attendance_images(
             }
             
             if face_tensors is None:
+                print(f"[DEBUG] No faces detected in image {img_idx}")
                 all_image_results.append(image_result)
                 continue
             
+            print(f"[DEBUG] Found {len(face_tensors)} faces in image {img_idx}")
             image_result["faces_detected"] = len(face_tensors)
             
             # Process each detected face
@@ -889,13 +947,21 @@ async def upload_multiple_attendance_images(
                     limit=1
                 )
                 
+                print(f"[DEBUG] Image {img_idx}, Face {face_idx}: Search result: {search_result[0].score if search_result else 'None'}")
+                
+                face_key = f"{img_idx}_{face_idx}"
+                
                 if search_result and search_result[0].score >= threshold:
                     student_data = search_result[0].payload
                     student_id = student_data["user_id"]
                     
+                    print(f"[DEBUG] Matched student_id: {student_id}, name: {student_data.get('name')}, score: {search_result[0].score}")
+                    print(f"[DEBUG] Is enrolled? {student_id in enrolled_student_ids}")
+                    
                     # Only count if enrolled in this subject
                     if student_id in enrolled_student_ids:
                         confidence = float(search_result[0].score)
+                        matched_face_keys.add(face_key)
                         
                         # Keep the best detection for each student
                         if student_id not in detected_students_map or confidence > detected_students_map[student_id]["confidence"]:
@@ -912,6 +978,25 @@ async def upload_multiple_attendance_images(
                             }
                         
                         image_result["students_identified"] += 1
+                    else:
+                        # Face matched someone not enrolled in this subject
+                        if face_key not in matched_face_keys:
+                            unidentified_faces.append(UnidentifiedPerson(
+                                face_index=len(unidentified_faces),
+                                confidence=float(search_result[0].score),
+                                reason=f"Student not enrolled in this subject (matched: {student_data.get('name')})"
+                            ))
+                            matched_face_keys.add(face_key)
+                else:
+                    # No match above threshold or no match at all
+                    if face_key not in matched_face_keys:
+                        reason = f"No match above threshold (score: {search_result[0].score:.2f})" if search_result else "No match found in database"
+                        unidentified_faces.append(UnidentifiedPerson(
+                            face_index=len(unidentified_faces),
+                            confidence=float(search_result[0].score) if search_result else None,
+                            reason=reason
+                        ))
+                        matched_face_keys.add(face_key)
             
             all_image_results.append(image_result)
         
@@ -967,10 +1052,11 @@ async def upload_multiple_attendance_images(
             "total_images_processed": len(images),
             "image_results": all_image_results,
             "detected_students": present_students_list,  # ONLY PRESENT STUDENTS
+            "unidentified_persons": [{"face_index": uf.face_index, "confidence": uf.confidence, "reason": uf.reason} for uf in unidentified_faces],
             "total_detected": len(detected_ids),
             "total_enrolled": len(enrolled_student_ids),
             "processing_status": "completed",
-            "message": f"Processed {len(images)} images. Found {len(detected_ids)} present students."
+            "message": f"Processed {len(images)} images. Found {len(detected_ids)} present students and {len(unidentified_faces)} unidentified persons."
         }
     
     except Exception as e:
