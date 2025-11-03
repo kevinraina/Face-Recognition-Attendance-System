@@ -108,10 +108,17 @@ class DetectedStudent(BaseModel):
     confidence: Optional[float] = None
     face_index: Optional[int] = None
 
+class UnidentifiedPerson(BaseModel):
+    face_index: int
+    confidence: Optional[float] = None
+    reason: str = "No match found in database"
+
 class ImageProcessingResponse(BaseModel):
     session_id: int
     detected_students: List[DetectedStudent]
+    unidentified_persons: List[UnidentifiedPerson]
     total_detected: int
+    total_unidentified: int
     processing_status: str
 
 # Auth Schemas

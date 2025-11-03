@@ -28,7 +28,7 @@ from schemas import (
     AttendanceSessionCreate, AttendanceSessionResponse,
     AttendanceRecordCreate, AttendanceRecordResponse,
     LoginRequest, LoginResponse,
-    ImageProcessingResponse, DetectedStudent,
+    ImageProcessingResponse, DetectedStudent, UnidentifiedPerson,
     EnrollmentCreate, StudentAttendanceStats, StudentAttendanceResponse
 )
 
@@ -588,6 +588,8 @@ async def upload_attendance_image(
         
         detected_students = []
         detected_ids = set()
+        unidentified_persons = []
+        matched_face_indices = set()
         
         # Process each detected face
         for idx, face_tensor in enumerate(face_tensors):
@@ -609,6 +611,7 @@ async def upload_attendance_image(
                 # Only mark if enrolled in this subject
                 if student_id in enrolled_student_ids and student_id not in detected_ids:
                     detected_ids.add(student_id)
+                    matched_face_indices.add(idx)
                     
                     # Create attendance record
                     record = AttendanceRecord(
@@ -630,6 +633,26 @@ async def upload_attendance_image(
                         confidence=float(search_result[0].score),
                         face_index=idx
                     ))
+                else:
+                    # Face matched someone not enrolled in this subject OR below threshold
+                    if idx not in matched_face_indices:
+                        reason = "Student not enrolled in this subject" if student_id not in enrolled_student_ids else "Duplicate detection"
+                        unidentified_persons.append(UnidentifiedPerson(
+                            face_index=idx,
+                            confidence=float(search_result[0].score) if search_result else None,
+                            reason=reason
+                        ))
+                        matched_face_indices.add(idx)
+            else:
+                # No match found in database or score below threshold
+                if idx not in matched_face_indices:
+                    reason = f"No match above threshold (score: {search_result[0].score:.2f})" if search_result else "No match found in database"
+                    unidentified_persons.append(UnidentifiedPerson(
+                        face_index=idx,
+                        confidence=float(search_result[0].score) if search_result else None,
+                        reason=reason
+                    ))
+                    matched_face_indices.add(idx)
         
         # Mark absent students
         for enrollment in enrollments:
@@ -658,7 +681,9 @@ async def upload_attendance_image(
         return ImageProcessingResponse(
             session_id=session_id,
             detected_students=detected_students,
+            unidentified_persons=unidentified_persons,
             total_detected=len(detected_ids),
+            total_unidentified=len(unidentified_persons),
             processing_status="completed"
         )
     

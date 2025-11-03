@@ -20,6 +20,12 @@ interface Student {
   faceIndex?: number;
 }
 
+interface UnidentifiedPerson {
+  face_index: number;
+  confidence?: number;
+  reason: string;
+}
+
 interface Subject {
   id: string;
   name: string;
@@ -36,6 +42,7 @@ const TakeAttendance: React.FC = () => {
   const [imagePreviews, setImagePreviews] = useState<string[]>([]);  // Changed to array
   const [isProcessing, setIsProcessing] = useState(false);
   const [detectedStudents, setDetectedStudents] = useState<Student[]>([]);
+  const [unidentifiedPersons, setUnidentifiedPersons] = useState<UnidentifiedPerson[]>([]);
   const [showResults, setShowResults] = useState(false);
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -222,12 +229,20 @@ const TakeAttendance: React.FC = () => {
           faceIndex: student.face_index !== undefined ? student.face_index : undefined
         }));
 
+      // Step 4: Format unidentified persons
+      const formattedUnidentified: UnidentifiedPerson[] = result.unidentified_persons || [];
+
       setDetectedStudents(formattedStudents);
+      setUnidentifiedPersons(formattedUnidentified);
       setShowResults(true);
 
+      const unidentifiedMsg = formattedUnidentified.length > 0 
+        ? ` ${formattedUnidentified.length} unidentified person(s) detected.`
+        : '';
+      
       toast({
         title: "Processing Complete!",
-        description: `Processed ${result.total_images_processed} image(s). Found ${result.total_detected} present students out of ${result.total_enrolled} enrolled.`,
+        description: `Processed ${result.total_images_processed} image(s). Found ${result.total_detected} present students out of ${result.total_enrolled} enrolled.${unidentifiedMsg}`,
       });
     } catch (error) {
       console.error('Error processing attendance:', error);
@@ -264,6 +279,7 @@ const TakeAttendance: React.FC = () => {
     setSelectedImages([]);
     setImagePreviews([]);
     setDetectedStudents([]);
+    setUnidentifiedPersons([]);
     setShowResults(false);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
@@ -275,6 +291,7 @@ const TakeAttendance: React.FC = () => {
     setSelectedImages([]);
     setImagePreviews([]);
     setDetectedStudents([]);
+    setUnidentifiedPersons([]);
     setShowResults(false);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
@@ -453,26 +470,47 @@ const TakeAttendance: React.FC = () => {
           </CardContent>
         </Card>
 
-        {/* Results Section - Beautiful Detection UI - ONLY PRESENT STUDENTS */}
+        {/* Results Section - Beautiful Detection UI - PRESENT STUDENTS & UNIDENTIFIED */}
         {showResults && (
           <div className="space-y-6">
             {/* Stats Overview */}
-            <Card className="bg-gradient-to-br from-green-500/10 via-green-400/5 to-background border-green-500/20">
-              <CardContent className="pt-6">
-                <div className="text-center">
-                  <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-green-500/10 mb-4">
-                    <CheckCircle2 className="h-12 w-12 text-green-500" />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Card className="bg-gradient-to-br from-green-500/10 via-green-400/5 to-background border-green-500/20">
+                <CardContent className="pt-6">
+                  <div className="text-center">
+                    <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-green-500/10 mb-3">
+                      <CheckCircle2 className="h-10 w-10 text-green-500" />
+                    </div>
+                    <div className="text-4xl font-bold text-green-500 mb-1">
+                      {detectedStudents.length}
+                    </div>
+                    <div className="text-base font-medium text-foreground">Students Present</div>
+                    <div className="text-xs text-muted-foreground mt-1">
+                      Successfully identified
+                    </div>
                   </div>
-                  <div className="text-5xl font-bold text-green-500 mb-2">
-                    {detectedStudents.length}
-                  </div>
-                  <div className="text-lg font-medium text-foreground">Students Present</div>
-                  <div className="text-sm text-muted-foreground mt-2">
-                    Detected across {selectedImages.length} photo{selectedImages.length !== 1 ? 's' : ''}
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
+
+              {unidentifiedPersons.length > 0 && (
+                <Card className="bg-gradient-to-br from-yellow-500/10 via-yellow-400/5 to-background border-yellow-500/20">
+                  <CardContent className="pt-6">
+                    <div className="text-center">
+                      <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-yellow-500/10 mb-3">
+                        <AlertCircle className="h-10 w-10 text-yellow-500" />
+                      </div>
+                      <div className="text-4xl font-bold text-yellow-500 mb-1">
+                        {unidentifiedPersons.length}
+                      </div>
+                      <div className="text-base font-medium text-foreground">Unidentified</div>
+                      <div className="text-xs text-muted-foreground mt-1">
+                        Could not identify
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+            </div>
 
             {/* Detected Students */}
             <Card>
@@ -560,6 +598,82 @@ const TakeAttendance: React.FC = () => {
                 )}
               </CardContent>
             </Card>
+
+            {/* Unidentified Persons Section */}
+            {unidentifiedPersons.length > 0 && (
+              <Card className="border-yellow-500/30">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <AlertCircle className="h-5 w-5 text-yellow-500" />
+                    Unidentified Persons
+                  </CardTitle>
+                  <CardDescription>
+                    {unidentifiedPersons.length} face(s) detected that could not be matched to enrolled students
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {unidentifiedPersons.map((person, index) => (
+                      <div
+                        key={index}
+                        className="relative p-4 rounded-xl border-2 bg-yellow-50 dark:bg-yellow-950/20 border-yellow-500/50 transition-all duration-300 hover:scale-[1.02]"
+                      >
+                        {/* Warning Badge */}
+                        <div className="absolute top-2 right-2">
+                          <Badge variant="outline" className="border-yellow-500 text-yellow-600 dark:text-yellow-400">
+                            <AlertCircle className="h-3 w-3 mr-1" />
+                            Unknown
+                          </Badge>
+                        </div>
+
+                        <div className="flex items-start gap-4">
+                          {/* Avatar */}
+                          <Avatar className="h-16 w-16 border-2 border-yellow-500">
+                            <AvatarFallback className="text-lg font-bold bg-yellow-500 text-white">
+                              ?
+                            </AvatarFallback>
+                          </Avatar>
+
+                          {/* Person Info */}
+                          <div className="flex-1 min-w-0">
+                            <div className="font-semibold text-lg text-foreground">
+                              Unidentified Person {index + 1}
+                            </div>
+                            <div className="text-sm text-muted-foreground mt-1">
+                              Face #{person.face_index}
+                            </div>
+                            <div className="text-xs text-yellow-600 dark:text-yellow-400 mt-2">
+                              {person.reason}
+                            </div>
+                            
+                            {/* Confidence Score if available */}
+                            {person.confidence !== undefined && (
+                              <div className="flex items-center gap-2 mt-2">
+                                <div className="flex-1 h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                                  <div 
+                                    className="h-full bg-gradient-to-r from-yellow-400 to-yellow-600 transition-all duration-500"
+                                    style={{ width: `${person.confidence * 100}%` }}
+                                  />
+                                </div>
+                                <span className="text-xs font-medium text-yellow-600 dark:text-yellow-400">
+                                  {Math.round(person.confidence * 100)}%
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="mt-4 p-3 bg-yellow-50 dark:bg-yellow-950/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+                    <p className="text-sm text-muted-foreground">
+                      <strong>Note:</strong> These faces were detected but could not be identified. 
+                      Possible reasons: not enrolled in this subject, no face photos registered, or low image quality.
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
           </div>
         )}
       </div>
